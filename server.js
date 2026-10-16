@@ -38,6 +38,43 @@ function normalizeQuestion(question) {
 }
 
 // ==================================================
+// CLEAN AI TUTOR ANSWERS
+// ==================================================
+
+function cleanTutorAnswer(answer) {
+    if (typeof answer !== "string") {
+        return "";
+    }
+
+    let text = answer;
+
+    // Remove Markdown heading symbols.
+    text = text.replace(/^\s{0,3}#{1,6}\s*/gm, "");
+
+    // Convert Markdown bullet lists into clean bullet points.
+    text = text.replace(/^\s*[-*+]\s+/gm, "• ");
+
+    // Remove bold and italic formatting symbols.
+    text = text.replace(/\*{1,2}([^*\n]+)\*{1,2}/g, "$1");
+    text = text.replace(/_{1,2}([^_\n]+)_{1,2}/g, "$1");
+
+    // Remove inline code formatting.
+    text = text.replace(/`([^`\n]+)`/g, "$1");
+
+    // Remove code-block fences while preserving their content.
+    text = text.replace(/```[a-zA-Z0-9_-]*\s*\n?/g, "");
+    text = text.replace(/```/g, "");
+
+    // Remove horizontal Markdown separators.
+    text = text.replace(/^\s*[-*_]{3,}\s*$/gm, "");
+
+    // Clean excessive blank lines.
+    text = text.replace(/\n[ \t]*\n[ \t]*\n+/g, "\n\n");
+
+    return text.trim();
+}
+
+// ==================================================
 // HOME AND HEALTH
 // ==================================================
 
@@ -341,7 +378,6 @@ app.post("/api/tutor", async (req, res) => {
         const message = req.body.message;
         const history = req.body.history;
 
-        // Validate the current question.
         if (
             typeof message !== "string" ||
             message.trim().length === 0 ||
@@ -352,7 +388,6 @@ app.post("/api/tutor", async (req, res) => {
             });
         }
 
-        // Validate conversation history.
         if (
             history !== undefined &&
             !Array.isArray(history)
@@ -365,7 +400,6 @@ app.post("/api/tutor", async (req, res) => {
         const suppliedHistory =
             Array.isArray(history) ? history : [];
 
-        // Only retain the latest 12 messages.
         const recentHistory =
             suppliedHistory.slice(-12);
 
@@ -410,42 +444,50 @@ app.post("/api/tutor", async (req, res) => {
             });
         }
 
-        // Give Gemini educational instructions.
         const systemInstruction = {
             parts: [
                 {
                     text: `
-You are AI Tutor, a helpful educational teacher inside the Quiz Master app.
+You are AI Tutor, an educational teacher inside the Quiz Master app.
 
-YOUR PURPOSE:
-Teach users about topics they ask about and answer their questions clearly.
+Your purpose is to teach topics and answer questions clearly.
+
+IMPORTANT RESPONSE FORMATTING RULES:
+
+1. Use plain text only.
+2. Do not use Markdown formatting.
+3. Never use asterisks for bold or italic text.
+4. Never use hash symbols for headings.
+5. Do not wrap words in backticks.
+6. Do not create Markdown tables.
+7. Use simple headings on their own lines without special symbols.
+8. Use numbered lists such as 1. and 2. when steps are needed.
+9. Use ordinary sentences and short paragraphs.
+10. Leave a blank line between separate paragraphs.
+11. Keep the answer easy to read on a mobile phone.
+12. Do not use decorative separators made of repeated symbols.
 
 TEACHING RULES:
-1. Give accurate, relevant and understandable answers.
-2. Explain concepts step by step when appropriate.
-3. Use simple language suitable for a learner.
-4. Give examples that help the learner understand.
-5. For difficult topics, start with the basics before moving to advanced ideas.
-6. Use headings, numbered steps and bullet points when they improve readability.
-7. If a user asks for a definition, define the term and give an example.
-8. If a user asks how something works, explain the process in order.
-9. If a user asks a follow-up question, use the previous conversation to understand the context.
-10. If the question is unclear, explain what you can and briefly ask for clarification.
-11. Do not claim certainty when information is uncertain.
-12. Do not invent facts, references or results.
-13. Keep answers focused on the user's question, but provide enough detail to teach effectively.
-14. When useful, finish with a short example or a summary of the key idea.
-15. Respond in the same language as the user whenever practical.
-16. Be patient, respectful and encouraging.
-17. Do not simply tell the learner to search elsewhere; teach them directly whenever possible.
 
-You are a tutor, so prioritize helping the learner understand the subject rather than only giving a short answer.
+1. Explain concepts clearly and accurately.
+2. Start with simple explanations before introducing difficult ideas.
+3. Give useful examples when appropriate.
+4. Explain processes step by step when the user asks how something works.
+5. Use language suitable for the learner.
+6. Answer follow-up questions using the conversation history.
+7. If the user asks for a definition, define the term and explain it.
+8. If the user asks for comparisons, explain the important differences.
+9. If the question is unclear, ask for clarification politely.
+10. Avoid unnecessary repetition.
+11. Be patient, respectful and encouraging.
+12. Respond in the same language as the user whenever practical.
+13. Do not invent facts or pretend to know something you do not know.
+14. Focus on helping the learner understand the subject.
 `
                 }
             ]
         };
 
-        // Add the current question after previous messages.
         const contents = validHistory.concat([
             {
                 role: "user",
@@ -505,7 +547,7 @@ You are a tutor, so prioritize helping the learner understand the subject rather
                 ? candidate.content.parts
                 : [];
 
-        const answer = parts
+        const rawAnswer = parts
             .map(part =>
                 typeof part.text === "string"
                     ? part.text
@@ -514,7 +556,7 @@ You are a tutor, so prioritize helping the learner understand the subject rather
             .join("")
             .trim();
 
-        if (!answer) {
+        if (!rawAnswer) {
             console.error(
                 "AI Tutor returned no answer text."
             );
@@ -523,6 +565,9 @@ You are a tutor, so prioritize helping the learner understand the subject rather
                 error: "AI Tutor returned an empty answer. Please try again."
             });
         }
+
+        // Remove remaining Markdown formatting before returning.
+        const answer = cleanTutorAnswer(rawAnswer);
 
         return res.json({
             answer: answer
